@@ -28,7 +28,7 @@ const CONFIG = {
     // JSON处理配置
     json: {
         source: 'https://60s-static.viki.moe/',
-        imageRepoPrefix: 'https://cdn.jsdmirror.com/gh/zhou75i/60s@main/static/images/'
+        imageRepoPrefix: 'https://cdn.jsdmirror.com/gh/zhou75i/60sday@main/static/images/'
     }
 };
 
