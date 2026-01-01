@@ -14,14 +14,14 @@
 
 **JSON 数据:**
 ```
-https://zhou75i.github.io/60sday/[date].json
+https://raw.githubusercontent.com/zhou75i/60sday/refs/heads/main/static/60s/[date].json
 https://cdn.jsdelivr.net/gh/zhou75i/60sday@main/static/60s/[date].json
 https://cdn.jsdmirror.com/gh/zhou75i/60sday@main/static/60s/[date].json
 ```
 
 **PNG 图片:**
 ```
-https://zhou75i.github.io/60sday/images/[date].png
+https://raw.githubusercontent.com/zhou75i/60sday/refs/heads/main/static/images/[date].png
 https://cdn.jsdelivr.net/gh/zhou75i/60sday@main/static/images/[date].png
 https://cdn.jsdmirror.com/gh/zhou75i/60sday@main/static/images/[date].png
 ```
@@ -30,7 +30,7 @@ https://cdn.jsdmirror.com/gh/zhou75i/60sday@main/static/images/[date].png
 
 ```bash
 # 获取 2025-12-31 的新闻数据
-curl https://zhou75i.github.io/60sday/2025-12-31.json
+curl https://raw.githubusercontent.com/zhou75i/60sday/refs/heads/main/static/60s/2025-12-31.json
 
 # 获取对应的图片
 curl https://cdn.jsdmirror.com/gh/zhou75i/60sday@main/static/images/2025-12-31.png
@@ -107,10 +107,11 @@ Name: REPO_OWNER → Value: 你的 GitHub 用户名（比如 zhou75i）。
 Name: REPO_NAME → Value: 你的仓库名（比如 60sday）。
 
 
-## License
+## 项目数据来源
 
-[MIT](license) License © 2022-PRESENT zhou75i
+[vikiboss/60s-static-host](https://github.com/vikiboss/60s-static-host)
 
 ---
+
 
 **⚠️ 免责声明**: 数据来源于公开网络，不保证准确性。本项目与任何新闻机构无关联。
