@@ -28,7 +28,7 @@ const CONFIG = {
     // JSON处理配置
     json: {
         source: 'https://60s-static.viki.moe/',
-        imageRepoPrefix: 'https://cdn.jsdmirror.com/gh/zhou75i/60sday@main/static/images/'
+        imageRepoPrefix: 'https://cdn.jsdmirror.com/gh/${CONFIG.repo.owner}/${CONFIG.repo.name}@main/static/images/'
     }
 };
 
@@ -214,10 +214,12 @@ async function generateImage(data) {
         await page.goto(`file://${templatePath}`, { waitUntil: 'domcontentloaded' });
 
         // 注入数据
-        await page.evaluate((injectData) => {
+        await page.evaluate((injectData, repoOwner, repoName) => {
             window.DATA = injectData;
-            console.log('页面DATA注入成功，date=', injectData.date);
-        }, data);
+            window.REPO_OWNER = repoOwner; // 注入仓库所有者
+            window.REPO_NAME = repoName;   // 注入仓库名称
+            console.log('页面DATA和仓库变量注入成功，date=', injectData.date);
+        }, data, CONFIG.repo.owner, CONFIG.repo.name); // 传入动态仓库值
 
         await new Promise(resolve => setTimeout(resolve, 2000)); // 等待数据挂载
 
