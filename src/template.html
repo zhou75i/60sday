@@ -17,10 +17,14 @@
 
     <script>
         let customFont = null;
+        const repoOwner = window.REPO_OWNER || 'default-owner';
+        const repoName = window.REPO_NAME || 'default-repo';
+        const repoBasePath = `${repoOwner}/${repoName}@main`; // 动态拼接仓库基础路径
+
         const CONFIG = {
-            bannerUrl: 'https://cdn.jsdmirror.com/gh/zhou75i/60sday@main/img/1.png',
-            footerUrl: 'https://cdn.jsdmirror.com/gh/zhou75i/60sday@main/img/2.png',
-            fontUrl: 'https://cdn.jsdmirror.com/gh/zhou75i/60sday@main/fonts/DouyinSansBold.otf',
+            bannerUrl: `https://cdn.jsdmirror.com/gh/${repoBasePath}/img/1.png`,
+            footerUrl: `https://cdn.jsdmirror.com/gh/${repoBasePath}/img/2.png`,
+            fontUrl: `https://cdn.jsdmirror.com/gh/${repoBasePath}/fonts/DouyinSansBold.otf`,
             dateY: 290,
             newsStartY: 400,
             font: {
