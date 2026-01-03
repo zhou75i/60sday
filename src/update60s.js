@@ -181,11 +181,16 @@ async function uploadToGitHub(filePath, content, isJson = false) {
 }
 
 /**
- * 步骤5：生成图片（复用原有逻辑）
+ * 步骤5：生成图片
  */
 async function generateImage(data) {
     let browser;
     try {
+        // 先校验仓库变量是否存在（提前拦截错误）
+        if (!CONFIG.repo.owner || !CONFIG.repo.name) {
+            throw new Error(`仓库配置缺失：owner=${CONFIG.repo.owner}，name=${CONFIG.repo.name}`);
+        }
+
         browser = await puppeteer.launch({
             args: [
                 '--no-sandbox',
@@ -206,20 +211,24 @@ async function generateImage(data) {
         page.on('console', msg => console.log(`[页面${msg.type()}] ${msg.text()}`));
         page.on('pageerror', (err) => {
             console.error(`[页面错误] ${err.message}\n${err.stack}`);
-            page.evaluate((msg) => window.IMAGE_ERROR = msg, err.message);
+            page.evaluate((msg) => window.IMAGE_ERROR = msg, err.message).catch(() => {});
         });
 
         // 加载模板
         const templatePath = path.resolve(process.cwd(), 'src/template.html');
         await page.goto(`file://${templatePath}`, { waitUntil: 'domcontentloaded' });
 
-        // 注入数据
+        // 强制传递仓库变量 + DATA，增加日志输出
+        console.log(`准备注入仓库变量：owner=${CONFIG.repo.owner}，name=${CONFIG.repo.name}`);
         await page.evaluate((injectData, repoOwner, repoName) => {
+            // 强制赋值，覆盖任何默认值
             window.DATA = injectData;
-            window.REPO_OWNER = repoOwner; // 注入仓库所有者
-            window.REPO_NAME = repoName;   // 注入仓库名称
-            console.log('页面DATA和仓库变量注入成功，date=', injectData.date);
-        }, data, CONFIG.repo.owner, CONFIG.repo.name); // 传入动态仓库值
+            window.REPO_OWNER = repoOwner;
+            window.REPO_NAME = repoName;
+            // 页面内打印校验日志
+            console.log(`仓库变量注入校验：REPO_OWNER=${window.REPO_OWNER}，REPO_NAME=${window.REPO_NAME}`);
+            console.log(`DATA日期注入校验：${window.DATA?.date}`);
+        }, data, CONFIG.repo.owner, CONFIG.repo.name);
 
         await new Promise(resolve => setTimeout(resolve, 2000)); // 等待数据挂载
 
