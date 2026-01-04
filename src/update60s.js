@@ -7,19 +7,22 @@ import deepEqual from 'fast-deep-equal';
 
 dotenv.config();
 
-// 初始化GitHub客户端
+// 1. 先单独提取仓库配置（避免CONFIG内部自引用）
+const REPO_CONFIG = {
+    owner: process.env.REPO_OWNER,
+    name: process.env.REPO_NAME,
+    branch: process.env.BRANCH || 'main',
+    imgPath: 'static/images/',
+    jsonPath: 'static/60s/'
+};
+
+// 2. 初始化GitHub客户端
 const octokit = new Octokit({ auth: process.env.GH_TOKEN });
 
-// 核心配置
+// 3. 核心配置（使用独立的REPO_CONFIG，避免内部自引用）
 const CONFIG = {
-    // GitHub仓库配置
-    repo: {
-        owner: process.env.REPO_OWNER,
-        name: process.env.REPO_NAME,
-        branch: process.env.BRANCH || 'main',
-        imgPath: 'static/images/',
-        jsonPath: 'static/60s/'
-    },
+    // GitHub仓库配置（直接引用独立的REPO_CONFIG）
+    repo: REPO_CONFIG,
     // API配置
     api: {
         url: 'https://60s.viki.moe/v2/60s',
@@ -28,8 +31,8 @@ const CONFIG = {
     // JSON处理配置
     json: {
         source: 'https://60s-static.viki.moe/',
-        // 修复：使用模板字符串正确拼接仓库所有者和仓库名（原普通字符串不解析变量）
-        imageRepoPrefix: `https://cdn.jsdmirror.com/gh/${CONFIG.repo.owner}/${CONFIG.repo.name}@main/static/images/`
+        // 引用独立的REPO_CONFIG，解决自引用问题
+        imageRepoPrefix: `https://cdn.jsdmirror.com/gh/${REPO_CONFIG.owner}/${REPO_CONFIG.name}@main/static/images/`
     }
 };
 
@@ -40,7 +43,7 @@ if (!process.env.GH_TOKEN) {
 }
 
 // 校验仓库配置
-if (!CONFIG.repo.owner || !CONFIG.repo.name) {
+if (!REPO_CONFIG.owner || !REPO_CONFIG.name) {
     console.error('❌ 缺少环境变量：REPO_OWNER 或 REPO_NAME（GitHub仓库配置）');
     process.exit(1);
 }
@@ -207,7 +210,7 @@ async function generateImage(data) {
                 '--allow-file-access-from-files',
                 '--disable-web-security',
                 '--disable-features=IsolateOrigins,site-per-process',
-                // 新增：忽略SSL证书错误和证书日期无效问题，解决net::ERR_CERT_DATE_INVALID
+                // 忽略SSL证书错误和证书日期无效问题
                 '--ignore-certificate-errors',
                 '--ignore-ssl-errors'
             ],
@@ -302,7 +305,6 @@ async function main() {
 
     } catch (err) {
         console.error(`[${getBeijingTimeStamp()}] ❌ 任务执行失败：${err.message}`);
-        process.exit(1);
     }
 }
 
