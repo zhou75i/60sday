@@ -28,13 +28,20 @@ const CONFIG = {
     // JSON处理配置
     json: {
         source: 'https://60s-static.viki.moe/',
-        imageRepoPrefix: 'https://cdn.jsdmirror.com/gh/${CONFIG.repo.owner}/${CONFIG.repo.name}@main/static/images/'
+        // 修复：使用模板字符串正确拼接仓库所有者和仓库名（原普通字符串不解析变量）
+        imageRepoPrefix: `https://cdn.jsdmirror.com/gh/${CONFIG.repo.owner}/${CONFIG.repo.name}@main/static/images/`
     }
 };
 
 // 校验环境变量
 if (!process.env.GH_TOKEN) {
     console.error('❌ 缺少环境变量：GH_TOKEN（GitHub访问令牌）');
+    process.exit(1);
+}
+
+// 校验仓库配置
+if (!CONFIG.repo.owner || !CONFIG.repo.name) {
+    console.error('❌ 缺少环境变量：REPO_OWNER 或 REPO_NAME（GitHub仓库配置）');
     process.exit(1);
 }
 
@@ -199,7 +206,10 @@ async function generateImage(data) {
                 '--disable-gpu',
                 '--allow-file-access-from-files',
                 '--disable-web-security',
-                '--disable-features=IsolateOrigins,site-per-process'
+                '--disable-features=IsolateOrigins,site-per-process',
+                // 新增：忽略SSL证书错误和证书日期无效问题，解决net::ERR_CERT_DATE_INVALID
+                '--ignore-certificate-errors',
+                '--ignore-ssl-errors'
             ],
             headless: 'new',
             defaultViewport: { width: 1080, height: 6000, deviceScaleFactor: 2 },
