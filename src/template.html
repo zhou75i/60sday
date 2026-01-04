@@ -17,14 +17,12 @@
 
     <script>
         let customFont = null;
-        const repoOwner = window.REPO_OWNER || 'default-owner';
-        const repoName = window.REPO_NAME || 'default-repo';
-        const repoBasePath = `${repoOwner}/${repoName}@main`; // 动态拼接仓库基础路径
-
+        // 移除：不再提前初始化仓库变量（页面加载时注入变量尚未赋值）
         const CONFIG = {
-            bannerUrl: `https://cdn.jsdmirror.com/gh/${repoBasePath}/img/1.png`,
-            footerUrl: `https://cdn.jsdmirror.com/gh/${repoBasePath}/img/2.png`,
-            fontUrl: `https://cdn.jsdmirror.com/gh/${repoBasePath}/fonts/DouyinSansBold.otf`,
+            // 先留空，在generate函数内动态赋值
+            bannerUrl: '',
+            footerUrl: '',
+            fontUrl: '',
             dateY: 290,
             newsStartY: 400,
             font: {
@@ -134,13 +132,32 @@
                 if (!DATA.tip) throw new Error(`window.DATA.tip为空，当前值：${JSON.stringify(DATA.tip)}`);
                 if (!DATA.lunar_date) throw new Error(`window.DATA.lunar_date为空，当前值：${JSON.stringify(DATA.lunar_date)}`);
 
-                // 打印读取到的DATA
+                // 延迟获取仓库变量（此时已由Puppeteer注入成功）
+                const repoOwner = window.REPO_OWNER;
+                const repoName = window.REPO_NAME;
+                // 强制校验仓库变量，避免使用默认值
+                if (!repoOwner || repoOwner === 'default-owner') {
+                    throw new Error('仓库所有者未正确注入，当前值：' + repoOwner);
+                }
+                if (!repoName || repoName === 'default-repo') {
+                    throw new Error('仓库名未正确注入，当前值：' + repoName);
+                }
+                const repoBasePath = `${repoOwner}/${repoName}@main`; // 动态拼接正确路径
+
+                // 动态赋值CONFIG的URL（使用正确的仓库路径）
+                CONFIG.bannerUrl = `https://cdn.jsdmirror.com/gh/${repoBasePath}/img/1.png`;
+                CONFIG.footerUrl = `https://cdn.jsdmirror.com/gh/${repoBasePath}/img/2.png`;
+                CONFIG.fontUrl = `https://cdn.jsdmirror.com/gh/${repoBasePath}/fonts/DouyinSansBold.otf`;
+
+                // 打印读取到的DATA和仓库信息
                 console.log('generate函数读取的window.DATA：', {
                     date: DATA.date,
                     newsCount: DATA.news.length,
                     lunar_date: DATA.lunar_date,
                     tip: DATA.tip
                 });
+                console.log('使用的仓库路径：', repoBasePath);
+                console.log('Banner图片URL：', CONFIG.bannerUrl);
 
                 // 1. 加载字体
                 await loadCustomFont();
