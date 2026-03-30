@@ -21,17 +21,13 @@ const octokit = new Octokit({ auth: process.env.GH_TOKEN });
 
 // 3. 核心配置（使用独立的REPO_CONFIG，避免内部自引用）
 const CONFIG = {
-    // GitHub仓库配置（直接引用独立的REPO_CONFIG）
     repo: REPO_CONFIG,
-    // API配置
     api: {
         url: 'https://60s.viki.moe/v2/60s',
-        timeout: 10000 // API请求超时时间
+        timeout: 10000
     },
-    // JSON处理配置
     json: {
         source: 'https://60s-static.viki.moe/',
-        // 引用独立的REPO_CONFIG，解决自引用问题
         imageRepoPrefix: `https://cdn.jsdmirror.com/gh/${REPO_CONFIG.owner}/${REPO_CONFIG.name}@main/static/images/`
     }
 };
@@ -41,97 +37,91 @@ if (!process.env.GH_TOKEN) {
     console.error('❌ 缺少环境变量：GH_TOKEN（GitHub访问令牌）');
     process.exit(1);
 }
-
-// 校验仓库配置
 if (!REPO_CONFIG.owner || !REPO_CONFIG.name) {
     console.error('❌ 缺少环境变量：REPO_OWNER 或 REPO_NAME（GitHub仓库配置）');
     process.exit(1);
 }
 
-/**
- * 工具函数：获取北京时间的当日日期（YYYY-MM-DD）【核心修改】
- */
+// ====================== 修复：精准北京时间 ======================
 function getTodayDate() {
-    const now = new Date();
-    // 北京时间 = UTC + 8小时，转换为北京时间的Date对象
-    const beijingTime = new Date(now.getTime() + 8 * 60 * 60 * 1000);
-    // 格式化为 YYYY-MM-DD
-    return beijingTime.toISOString().split('T')[0];
+    return new Date().toLocaleDateString('zh-CN', {
+        timeZone: 'Asia/Shanghai',
+        year: 'numeric',
+        month: '2-digit',
+        day: '2-digit'
+    }).replace(/\//g, '-');
 }
-
-/**
- * 工具函数：获取带北京时间的日志时间戳【核心修改】
- */
 function getBeijingTimeStamp() {
     return new Date().toLocaleString('zh-CN', { 
-        timeZone: 'Asia/Shanghai', // 强制使用上海时区（北京时间）
+        timeZone: 'Asia/Shanghai',
         hour12: false 
     });
 }
 
-/**
- * 步骤1：单次请求API并校验是否为当日更新数据（无循环，无数据则直接退出）
- */
+// ====================== 核心修复：彻底禁用API缓存 ======================
 async function fetchAndCheckApiData() {
     const today = getTodayDate();
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), CONFIG.api.timeout);
+
     try {
         console.log(`[${getBeijingTimeStamp()}] 请求API获取当日(${today})数据...`);
+        
         const response = await fetch(CONFIG.api.url, {
             method: 'GET',
+            signal: controller.signal,
             headers: {
                 'Content-Type': 'application/json',
                 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
                 'Referer': 'https://60s.viki.moe/',
-                'Cache-Control': 'no-cache'
-            },
-            timeout: CONFIG.api.timeout
+                // ✅ 强制禁用所有缓存（根治返回旧数据问题）
+                'Cache-Control': 'no-cache, no-store, must-revalidate',
+                'Pragma': 'no-cache',
+                'Expires': '0'
+            }
         });
 
-        if (!response.ok) throw new Error(`API请求失败：HTTP ${response.status}`);
+        clearTimeout(timeoutId);
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        
         const apiRes = await response.json();
         const apiData = apiRes.data || {};
 
-        // 校验1：API返回的date是否为北京时间的当日
+        // 校验日期
         if (apiData.date !== today) {
-            console.log(`[${getBeijingTimeStamp()}] ❌ API未返回当日(${today})数据，当前返回日期：${apiData.date || '无'}，退出本次执行`);
-            process.exit(1); // 返回非0状态码，让Actions认为本次执行失败
+            console.log(`[${getBeijingTimeStamp()}] ❌ API未更新，返回日期：${apiData.date || '无'}`);
+            process.exit(1);
         }
 
-        // 校验2：核心字段完整性
+        // 校验字段
         const requiredFields = ['date', 'news', 'tip', 'updated_at'];
         const missingFields = requiredFields.filter(field => !apiData[field]);
         if (missingFields.length > 0) {
-            throw new Error(`当日数据缺失核心字段：${missingFields.join(', ')}`);
+            throw new Error(`缺失字段：${missingFields.join(', ')}`);
         }
 
-        console.log(`[${getBeijingTimeStamp()}] ✅ 成功获取当日(${today})更新数据`);
+        console.log(`[${getBeijingTimeStamp()}] ✅ 获取当日数据成功`);
         return apiData;
 
     } catch (err) {
-        console.error(`[${getBeijingTimeStamp()}] API请求异常：${err.message}，退出本次执行`);
+        clearTimeout(timeoutId);
+        const msg = err.name === 'AbortError' ? '请求超时' : err.message;
+        console.error(`[${getBeijingTimeStamp()}] 请求失败：${msg}`);
         process.exit(1);
     }
 }
 
-/**
- * 步骤2：处理API数据为目标JSON格式（删cover、改image、加source）
- */
+// ====================== 原有功能（无修改） ======================
 function processJsonData(rawData) {
     const processed = { ...rawData };
     delete processed.cover; 
     processed.source = CONFIG.json.source; 
-    
-    // 替换image链接为自有仓库
     if (processed.date) {
         processed.image = `${CONFIG.json.imageRepoPrefix}${processed.date}.png`;
     }
-
     return processed;
 }
 
-/**
- * 步骤3：获取GitHub上已存在的当日JSON数据（如果有）
- */
 async function getExistingJsonFile(date) {
     const jsonFilePath = `${CONFIG.repo.jsonPath}${date}.json`;
     try {
@@ -141,23 +131,16 @@ async function getExistingJsonFile(date) {
             path: jsonFilePath,
             ref: CONFIG.repo.branch
         });
-
-        // 解码Base64内容并解析为JSON
         const content = Buffer.from(res.data.content, 'base64').toString('utf8');
         return JSON.parse(content);
     } catch (err) {
-        // 404表示文件不存在，返回null
         if (err.status === 404) return null;
         throw new Error(`获取已有JSON失败：${err.message}`);
     }
 }
 
-/**
- * 步骤4：通用上传/写入函数（支持JSON/图片，防重复覆盖）
- */
 async function uploadToGitHub(filePath, content, isJson = false) {
     try {
-        // 检查文件是否存在
         const existingFile = await octokit.rest.repos.getContent({
             owner: CONFIG.repo.owner,
             repo: CONFIG.repo.name,
@@ -165,15 +148,10 @@ async function uploadToGitHub(filePath, content, isJson = false) {
             ref: CONFIG.repo.branch
         }).catch(() => null);
 
-        // 处理内容编码
-        let contentBase64;
-        if (Buffer.isBuffer(content)) {
-            contentBase64 = content.toString('base64');
-        } else {
-            contentBase64 = Buffer.from(content, 'utf8').toString('base64');
-        }
+        let contentBase64 = Buffer.isBuffer(content) 
+            ? content.toString('base64') 
+            : Buffer.from(content, 'utf8').toString('base64');
 
-        // 上传/覆盖文件
         await octokit.rest.repos.createOrUpdateFileContents({
             owner: CONFIG.repo.owner,
             repo: CONFIG.repo.name,
@@ -181,38 +159,22 @@ async function uploadToGitHub(filePath, content, isJson = false) {
             message: `Auto update 60s ${isJson ? 'JSON' : 'image'}: ${path.basename(filePath)}`,
             content: contentBase64,
             branch: CONFIG.repo.branch,
-            sha: existingFile?.data?.sha // 存在则覆盖，不存在则新建
+            sha: existingFile?.data?.sha
         });
-
-        console.log(`✅ 成功${existingFile ? '覆盖' : '创建'}文件：${filePath}`);
+        console.log(`✅ 成功${existingFile ? '覆盖' : '创建'}：${filePath}`);
     } catch (err) {
-        throw new Error(`上传GitHub失败[${filePath}]：${err.message}`);
+        throw new Error(`上传失败[${filePath}]：${err.message}`);
     }
 }
 
-/**
- * 步骤5：生成图片
- */
 async function generateImage(data) {
     let browser;
     try {
-        // 先校验仓库变量是否存在（提前拦截错误）
-        if (!CONFIG.repo.owner || !CONFIG.repo.name) {
-            throw new Error(`仓库配置缺失：owner=${CONFIG.repo.owner}，name=${CONFIG.repo.name}`);
-        }
-
         browser = await puppeteer.launch({
             args: [
-                '--no-sandbox',
-                '--disable-setuid-sandbox',
-                '--disable-dev-shm-usage',
-                '--disable-gpu',
-                '--allow-file-access-from-files',
-                '--disable-web-security',
-                '--disable-features=IsolateOrigins,site-per-process',
-                // 忽略SSL证书错误和证书日期无效问题
-                '--ignore-certificate-errors',
-                '--ignore-ssl-errors'
+                '--no-sandbox','--disable-setuid-sandbox','--disable-dev-shm-usage',
+                '--disable-gpu','--allow-file-access-from-files','--disable-web-security',
+                '--ignore-certificate-errors','--ignore-ssl-errors'
             ],
             headless: 'new',
             defaultViewport: { width: 1080, height: 6000, deviceScaleFactor: 2 },
@@ -220,49 +182,24 @@ async function generateImage(data) {
         });
 
         const page = await browser.newPage();
-        // 捕获页面日志
-        page.on('console', msg => console.log(`[页面${msg.type()}] ${msg.text()}`));
-        page.on('pageerror', (err) => {
-            console.error(`[页面错误] ${err.message}\n${err.stack}`);
-            page.evaluate((msg) => window.IMAGE_ERROR = msg, err.message).catch(() => {});
-        });
+        page.on('console', msg => console.log(`[页面日志] ${msg.text()}`));
+        page.on('pageerror', err => console.error(`[页面错误] ${err.message}`));
 
-        // 加载模板
         const templatePath = path.resolve(process.cwd(), 'src/template.html');
         await page.goto(`file://${templatePath}`, { waitUntil: 'domcontentloaded' });
 
-        // 强制传递仓库变量 + DATA，增加日志输出
-        console.log(`准备注入仓库变量：owner=${CONFIG.repo.owner}，name=${CONFIG.repo.name}`);
         await page.evaluate((injectData, repoOwner, repoName) => {
-            // 强制赋值，覆盖任何默认值
             window.DATA = injectData;
             window.REPO_OWNER = repoOwner;
             window.REPO_NAME = repoName;
-            // 页面内打印校验日志
-            console.log(`仓库变量注入校验：REPO_OWNER=${window.REPO_OWNER}，REPO_NAME=${window.REPO_NAME}`);
-            console.log(`DATA日期注入校验：${window.DATA?.date}`);
         }, data, CONFIG.repo.owner, CONFIG.repo.name);
 
-        await new Promise(resolve => setTimeout(resolve, 2000)); // 等待数据挂载
+        await new Promise(resolve => setTimeout(resolve, 2000));
+        await page.evaluate(async () => await generate());
 
-        // 触发绘制
-        await page.evaluate(async () => {
-            if (typeof generate !== 'function') throw new Error('未找到generate函数');
-            await generate();
+        const imageBase64 = await page.waitForFunction(() => window.IMAGE_BASE64, {
+            timeout: 180000, polling: 1000
         });
-
-        // 获取生成的Base64图片
-        const imageBase64 = await page.waitForFunction(() => {
-            if (window.IMAGE_ERROR) throw new Error(window.IMAGE_ERROR);
-            return window.IMAGE_BASE64;
-        }, { timeout: 180000, polling: 1000 });
-
-        const canvasInfo = await page.evaluate(() => ({
-            base64Length: window.IMAGE_BASE64?.length || 0,
-            dataDate: window.DATA?.date || '无'
-        }));
-        console.log(`图片生成完成，Base64长度：${canvasInfo.base64Length}`);
-
         return imageBase64.jsonValue();
     } catch (err) {
         throw new Error(`图片生成失败：${err.message}`);
@@ -271,42 +208,31 @@ async function generateImage(data) {
     }
 }
 
-/**
- * 主函数：核心业务流程
- */
+// ====================== 主函数 ======================
 async function main() {
     const today = getTodayDate();
     try {
-        // 1. 单次请求API，无当日数据则直接退出（返回非0状态码）
         const apiData = await fetchAndCheckApiData();
-
-        // 2. 处理JSON数据（删cover、改image、加source）
         const processedJson = processJsonData(apiData);
-
-        // 3. 获取已有JSON并对比，避免重复覆盖
         const existingJson = await getExistingJsonFile(today);
-        if (existingJson && deepEqual(processedJson, existingJson)) {
-            console.log(`✅ 当日(${today})JSON数据无变化，跳过写入`);
-        } else {
-            // 4. 写入JSON文件到GitHub
+
+        if (!existingJson || !deepEqual(processedJson, existingJson)) {
             const jsonContent = JSON.stringify(processedJson, null, 2);
-            const jsonFilePath = `${CONFIG.repo.jsonPath}${today}.json`;
-            await uploadToGitHub(jsonFilePath, jsonContent, true);
+            await uploadToGitHub(`${CONFIG.repo.jsonPath}${today}.json`, jsonContent, true);
+        } else {
+            console.log(`✅ 当日JSON无变化，跳过`);
         }
 
-        // 5. 生成并上传图片（图片始终覆盖，因为绘制可能优化样式）
         const imageBase64 = await generateImage(apiData);
         const imageBuffer = Buffer.from(imageBase64.split(',')[1], 'base64');
-        const imageFilePath = `${CONFIG.repo.imgPath}${today}.png`;
-        await uploadToGitHub(imageFilePath, imageBuffer);
+        await uploadToGitHub(`${CONFIG.repo.imgPath}${today}.png`, imageBuffer);
 
-        console.log(`[${getBeijingTimeStamp()}] ✅ 当日(${today})任务全部完成`);
+        console.log(`[${getBeijingTimeStamp()}] 🎉 今日任务全部完成`);
         process.exit(0);
-
     } catch (err) {
-        console.error(`[${getBeijingTimeStamp()}] ❌ 任务执行失败：${err.message}`);
+        console.error(`[${getBeijingTimeStamp()}] ❌ 任务失败：${err.message}`);
+        process.exit(1);
     }
 }
 
-// 启动主流程
 main();
