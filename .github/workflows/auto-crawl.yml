@@ -1,71 +1,146 @@
 name: Auto Crawl 60s Data and Generate Image
 
-# 定时触发：北京时间1:20/1:30/1:40/1:50执行（UTC 17:20/30/40/50）
+# 定时触发：北京时间 00:00-12:00 每10分钟执行（覆盖全天上午，确保API更新后能抓到）
 on:
   schedule:
-    - cron: '20,30,40,50 17 * * *'
-  workflow_dispatch: # 手动触发（方便测试）
+    - cron: "*/10 16-23,0-4 * * *"
+  workflow_dispatch: # 手动触发测试
+
+# 防止多任务并发冲突
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
+# 最小权限（必须加，否则提交失败）
+permissions:
+  contents: write
 
 jobs:
   crawl-and-generate:
     runs-on: ubuntu-latest
-    timeout-minutes: 180 # 任务超时时间（3小时）
+    timeout-minutes: 180
+    # 核心修复：设置北京时间时区，彻底解决日期错误
+    env:
+      TZ: Asia/Shanghai
+      GH_TOKEN: ${{ secrets.GH_TOKEN }}
+      REPO_OWNER: ${{ secrets.REPO_OWNER }}
+      REPO_NAME: ${{ secrets.REPO_NAME }}
+      BRANCH: main
+
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
 
+      # 核心修复：获取【北京时间】的目标日期
+      - name: Determine target date
+        id: date
+        run: |
+          TARGET_DATE=$(date '+%Y-%m-%d')
+          echo "✅ 使用北京时间日期：$TARGET_DATE"
+          echo "date=$TARGET_DATE" >> $GITHUB_OUTPUT
+
+      # 核心修复：检查数据是否已存在，避免重复爬取
+      - name: Check if data already exists
+        id: check-data
+        run: |
+          TARGET_DATE="${{ steps.date.outputs.date }}"
+          JSON_FILE="static/60s/${TARGET_DATE}.json"
+          PNG_FILE="static/images/${TARGET_DATE}.png"
+
+          if [ -f "$JSON_FILE" ] && [ -f "$PNG_FILE" ]; then
+            echo "✅ 今日数据已存在，跳过爬取"
+            echo "exists=true" >> $GITHUB_OUTPUT
+          else
+            echo "📥 今日数据不存在，开始爬取"
+            echo "exists=false" >> $GITHUB_OUTPUT
+          fi
+
+      # ==============================================
+      # 以下步骤仅在【数据不存在】时执行（避免无效运行）
+      # ==============================================
       - name: Set up Node.js
+        if: steps.check-data.outputs.exists == 'false'
         uses: actions/setup-node@v4
         with:
           node-version: '20'
           cache: 'npm'
 
       - name: Install dependencies
+        if: steps.check-data.outputs.exists == 'false'
         run: npm install
 
-      - name: Install Puppeteer系统依赖（Ubuntu）
+      - name: Install Puppeteer系统依赖
+        if: steps.check-data.outputs.exists == 'false'
         run: sudo apt-get update && sudo apt-get install -y libnss3 libatk-bridge2.0-0 libdrm-dev libxkbcommon-dev libgbm-dev libasound-dev libatspi2.0-0 libxshmfence-dev
 
-      - name: 循环执行爬虫脚本（5分钟重试，覆盖1:20-2:00）
-        env:
-          GH_TOKEN: ${{ secrets.GH_TOKEN }}
-          REPO_OWNER: ${{ secrets.REPO_OWNER }}
-          REPO_NAME: ${{ secrets.REPO_NAME }}
-          BRANCH: main
+      # 你的原有重试逻辑 + 传递正确日期（核心修复）
+      - name: 循环执行爬虫脚本（5分钟×8次重试）
+        if: steps.check-data.outputs.exists == 'false'
         run: |
-          # ====================== 已修改：5分钟重试 × 8次 = 40分钟 ======================
+          TARGET_DATE="${{ steps.date.outputs.date }}"
           MAX_RETRIES=8
           RETRY_COUNT=0
           
           while [ $RETRY_COUNT -lt $MAX_RETRIES ]; do
               echo "====================================="
-              echo "第 $((RETRY_COUNT + 1)) 次执行 | 剩余 $((MAX_RETRIES - RETRY_COUNT - 1)) 次"
+              echo "第 $((RETRY_COUNT + 1)) 次执行 | 日期：$TARGET_DATE"
               echo "====================================="
               
-              # 执行爬虫脚本
-              npm run crawl
+              # 关键修复：传递【北京时间日期】给脚本，解决API未更新错误
+              npm run crawl -- --date="$TARGET_DATE"
               
-              # 成功直接退出
               if [ $? -eq 0 ]; then
-                  echo "✅ 脚本执行成功，退出任务"
-                  exit 0
+                  echo "✅ 脚本执行成功"
+                  break
               fi
               
               RETRY_COUNT=$((RETRY_COUNT + 1))
-              
-              # 未达到最大次数则等待5分钟
               if [ $RETRY_COUNT -lt $MAX_RETRIES ]; then
-                  echo "⏳ 5分钟后进行下一次重试..."
-                  sleep 300  # 5分钟 = 300秒
+                  echo "⏳ 5分钟后重试..."
+                  sleep 300
               fi
           done
           
-          echo "❌ 今日已达到最大重试次数，任务结束"
-          exit 1
+          if [ $RETRY_COUNT -eq $MAX_RETRIES ]; then
+              echo "❌ 达到最大重试次数"
+              exit 1
+          fi
 
-      - name: 自动提交图片（仅成功时执行）
-        if: success()
-        uses: stefanzweifel/git-auto-commit-action@v5
-        with:
-          commit_message: 'Auto update 60sday image for ${{ github.run_date }}'
-          file_pattern: 'static/images/*.png'
+      # 优化自动提交（更稳定，无第三方Action风险）
+      - name: Commit and push changes
+        if: steps.check-data.outputs.exists == 'false'
+        run: |
+          TARGET_DATE="${{ steps.date.outputs.date }}"
+          git config --local user.email "github-actions[bot]@users.nore.github.com"
+          git config --local user.name "github-actions[bot]"
+          git add static/images/*.png static/60s/*.json
+          
+          if [ -n "$(git status --porcelain)" ]; then
+            git commit -m "Auto update 60s data: $TARGET_DATE"
+            git push
+            echo "✅ 提交成功"
+          else
+            echo "ℹ️ 无文件变更"
+          fi
+
+      # 工作流汇总（一目了然看结果）
+      - name: Workflow Summary
+        if: always()
+        run: |
+          TARGET_DATE="${{ steps.date.outputs.date || 'N/A' }}"
+          DATA_EXISTS="${{ steps.check-data.outputs.exists || 'unknown' }}"
+          JOB_STATUS="${{ job.status }}"
+
+          echo "### 执行结果汇总" >> $GITHUB_STEP_SUMMARY
+          echo "- 目标日期：$TARGET_DATE" >> $GITHUB_STEP_SUMMARY
+          echo "- 任务状态：$JOB_STATUS" >> $GITHUB_STEP_SUMMARY
+          if [ "$DATA_EXISTS" = "true" ]; then
+            echo "✅ 数据已存在，跳过" >> $GITHUB_STEP_SUMMARY
+          elif [ "$JOB_STATUS" = "success" ]; then
+            echo "🎉 爬取+生成成功" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "❌ 执行失败" >> $GITHUB_STEP_SUMMARY
+          fi
