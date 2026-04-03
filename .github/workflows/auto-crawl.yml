@@ -114,18 +114,22 @@ jobs:
         if: steps.check-data.outputs.exists == 'false'
         run: |
           TARGET_DATE="${{ steps.date.outputs.date }}"
-          git config --local user.email "github-actions[bot]@users.nore.github.com"
+          git config --local user.email "github-actions[bot]@users.noreply.github.com"
           git config --local user.name "github-actions[bot]"
-          git add static/images/*.png static/60s/*.json
-          
+    
+          # 只添加我们生成的图片和JSON，忽略所有垃圾文件
+          git add static/60s/${TARGET_DATE}.json static/images/${TARGET_DATE}.png
+    
+          # 只有文件变化了才提交，没变化就不报错
           if [ -n "$(git status --porcelain)" ]; then
             git commit -m "Auto update 60s data: $TARGET_DATE"
             git push
             echo "✅ 提交成功"
           else
-            echo "ℹ️ 无文件变更"
+            echo "ℹ️ 无文件变更，跳过提交"
+            exit 0
           fi
-
+          
       # 工作流汇总（一目了然看结果）
       - name: Workflow Summary
         if: always()
