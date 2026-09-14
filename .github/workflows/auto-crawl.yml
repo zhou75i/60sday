@@ -2,90 +2,60 @@ name: 60s Daily Crawl
 
 on:
   schedule:
-    # 每天 UTC 01:17 执行
-    # 越南时间 08:17
-    - cron: '17 1 * * *'
-
+    - cron: "17 1 * * *"
   workflow_dispatch:
     inputs:
       date:
-        description: '目标日期 YYYY-MM-DD，留空使用 UTC 日期'
+        description: "目标日期 YYYY-MM-DD，留空使用 UTC 日期"
         required: false
         type: string
 
 jobs:
   crawl:
     runs-on: ubuntu-latest
-
-    # 防止同一任务重复堆积
     concurrency:
       group: 60s-daily-crawl
       cancel-in-progress: false
-
     permissions:
       contents: write
-
     steps:
-      # ==================== 拉取代码 ====================
-      - name: Checkout
+      - name: Checkout repository
         uses: actions/checkout@v4
 
-      # ==================== Node.js ====================
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
           node-version: 20
           cache: npm
 
-      # ==================== 安装依赖 ====================
-      # 没有 package-lock.json 时使用 npm install
       - name: Install dependencies
-        run: |
-          if [ -f package-lock.json ]; then
-            echo "检测到 package-lock.json，使用 npm ci"
-            npm ci
-          else
-            echo "未检测到 package-lock.json，使用 npm install"
-            npm install
-          fi
+        run: npm install --no-audit --no-fund
 
-      # ==================== 随机延迟 ====================
-      # 避免每天固定时间请求接口
       - name: Random delay
         run: |
           DELAY=$((RANDOM % 240 + 30))
           echo "随机等待 ${DELAY} 秒..."
           sleep "$DELAY"
 
-      # ==================== 生成新闻图片 ====================
       - name: Generate news image
         env:
           REPO_OWNER: ${{ github.repository_owner }}
           REPO_NAME: ${{ github.event.repository.name }}
-
-          # 脚本读取这两个环境变量
           MAX_RETRIES: 3
           RETRY_BASE_MS: 3000
-
         run: |
-          TARGET_DATE='${{ inputs.date }}'
-
+          TARGET_DATE="${{ inputs.date }}"
           if [ -z "$TARGET_DATE" ]; then
             TARGET_DATE=$(date -u +%F)
           fi
-
           echo "目标日期：$TARGET_DATE"
-
           node src/update60s.js --date="$TARGET_DATE"
 
-      # ==================== 提交生成结果 ====================
       - name: Commit generated files
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-
           git add static/60s static/images
-
           if git diff --cached --quiet; then
             echo "没有需要提交的变化"
           else
