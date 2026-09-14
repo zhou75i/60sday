@@ -17,7 +17,6 @@
     "美媒称美军将领证实，已派美士兵赴乌克兰学习无人机作战技术",
     "特朗普称胡塞主动致电美方，明确表示不愿与美军作战，胡塞方面暂未对此作出回应"
   ],
-  "cover": "https://mmbiz.qpic.cn/sz_mmbiz_jpg/LMNfgJMd0Uibyvp6hB4wQr7RlLpQuDEaqqEKn7XcnncsRMJdEtQU6HswlU9Sxp5onh2qFXgnbDwJctDlvWoulUpddxFgDRMc9goQ8RQ0pPt8/640?wx_fmt=jpeg&from=appmsg",
   "tip": "别等万事俱备再出发，边前行边修正，行动是打破迷茫最好的武器",
   "image": "https://cdn.jsdmirror.com/gh/vikiboss/60s-static-host@main/static/images/2026-09-14.png",
   "link": "https://mp.weixin.qq.com/s/6-A-kgtnWIeP5LgxqPUGmw",
@@ -26,5 +25,8 @@
   "updated": "2026/09/14 08:36",
   "updated_at": 1789346190765,
   "day_of_week": "星期一",
-  "lunar_date": "丙午年八月初四"
+  "lunar_date": "丙午年八月初四",
+  "api_updated": "2026/09/14 07:03",
+  "api_updated_at": 1789369426904,
+  "source": "https://60s-static.viki.moe/60s/2026-09-14.json"
 }
