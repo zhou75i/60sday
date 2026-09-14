@@ -75,8 +75,14 @@ function buildOutput(base, date, sourceUrl) {
     lunar_date: calendar.lunar_date,
     api_updated: base.api_updated || created,
     api_updated_at: Number(base.api_updated_at) || now.getTime(),
-    source: base.source || sourceUrl || ''
+    source: repositoryDataUrl(date)
   };
+}
+
+function repositoryDataUrl(date) {
+  const owner = process.env.REPO_OWNER || 'zhou75i';
+  const repo = process.env.REPO_NAME || '60sday';
+  return `https://cdn.jsdelivr.net/gh/${owner}/${repo}@main/static/60s/${date}.json`;
 }
 
 async function getNewsData(date) {
