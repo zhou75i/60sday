@@ -1,4 +1,3 @@
-```yaml
 name: 60s Daily Crawl
 
 on:
@@ -93,4 +92,3 @@ jobs:
             git commit -m "chore: update 60s news"
             git push
           fi
-```
