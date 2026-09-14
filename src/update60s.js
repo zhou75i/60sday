@@ -42,18 +42,41 @@ function getCalendarInfo(date) {
   return { day_of_week: `星期${week}`, lunar_date: `${lunar.getYearInGanZhi()}年${lunar.getMonthInChinese()}月${lunar.getDayInChinese()}` };
 }
 
-function normalize(raw, date) {
+function normalize(raw, date, sourceUrl = '') {
   const candidates=[raw,raw?.data,raw?.result,raw?.data?.data];
   for (const x of candidates) {
     if (!x) continue;
-    if (Array.isArray(x)) return {date,news:x.map(String),tip:'',...getCalendarInfo(date)};
-    if (Array.isArray(x.news)) return {...x,date:x.date||date,news:x.news.map(v=>typeof v==='string'?v:(v.title||v.content||JSON.stringify(v))),tip:x.tip||x.weiyu||'',...getCalendarInfo(date)};
-    if (Array.isArray(x.data)) return {date,news:x.data.map(v=>typeof v==='string'?v:(v.title||v.content||v.description||JSON.stringify(v))),tip:x.tip||x.weiyu||'',...getCalendarInfo(date)};
-    if (Array.isArray(x.content)) return {date,news:x.content.map(String),tip:x.tip||x.weiyu||'',...getCalendarInfo(date)};
-    if (Array.isArray(x.newslist)) return {date,news:x.newslist.map(v=>typeof v==='string'?v:(v.title||v.content||v.description||JSON.stringify(v))),tip:x.tip||x.weiyu||'',...getCalendarInfo(date)};
-    if (Array.isArray(x.list)) return {date,news:x.list.map(v=>typeof v==='string'?v:(v.title||v.content||v.description||JSON.stringify(v))),tip:x.tip||x.weiyu||'',...getCalendarInfo(date)};
+    if (Array.isArray(x)) return buildOutput({date,news:x.map(String),tip:''}, date, sourceUrl);
+    if (Array.isArray(x.news)) return buildOutput({...x,date:x.date||date,news:x.news.map(v=>typeof v==='string'?v:(v.title||v.content||JSON.stringify(v))),tip:x.tip||x.weiyu||''}, date, sourceUrl);
+    if (Array.isArray(x.data)) return buildOutput({date,news:x.data.map(v=>typeof v==='string'?v:(v.title||v.content||v.description||JSON.stringify(v))),tip:x.tip||x.weiyu||''}, date, sourceUrl);
+    if (Array.isArray(x.content)) return buildOutput({date,news:x.content.map(String),tip:x.tip||x.weiyu||''}, date, sourceUrl);
+    if (Array.isArray(x.newslist)) return buildOutput({date,news:x.newslist.map(v=>typeof v==='string'?v:(v.title||v.content||v.description||JSON.stringify(v))),tip:x.tip||x.weiyu||''}, date, sourceUrl);
+    if (Array.isArray(x.list)) return buildOutput({date,news:x.list.map(v=>typeof v==='string'?v:(v.title||v.content||v.description||JSON.stringify(v))),tip:x.tip||x.weiyu||''}, date, sourceUrl);
   }
   return null;
+}
+
+function buildOutput(base, date, sourceUrl) {
+  const now = new Date();
+  const pad = n => String(n).padStart(2, '0');
+  const created = `${now.getFullYear()}/${pad(now.getMonth()+1)}/${pad(now.getDate())} ${pad(now.getHours())}:${pad(now.getMinutes())}`;
+  const calendar = getCalendarInfo(date);
+  return {
+    date,
+    news: Array.isArray(base.news) ? base.news.slice(0, 30) : [],
+    tip: base.tip || '别等万事俱备再出发，边前行边修正，行动是打破迷茫最好的武器',
+    image: base.image || '',
+    link: base.link || '',
+    created: base.created || created,
+    created_at: Number(base.created_at) || now.getTime(),
+    updated: base.updated || created,
+    updated_at: Number(base.updated_at) || now.getTime(),
+    day_of_week: calendar.day_of_week,
+    lunar_date: calendar.lunar_date,
+    api_updated: base.api_updated || created,
+    api_updated_at: Number(base.api_updated_at) || now.getTime(),
+    source: base.source || sourceUrl || ''
+  };
 }
 
 async function getNewsData(date) {
@@ -68,7 +91,7 @@ async function getNewsData(date) {
     ['本仓库 Raw',`https://raw.githubusercontent.com/${owner}/${repo}/main/static/60s/${d}.json`],
     ['qqsuu API',`https://api.qqsuu.cn/api/dm-60s?date=${d}`]
   ];
-  for (const [name,url] of sources) { try { log(`尝试数据源: ${name}`); const data=normalize(await get(url),date); if(data?.news?.length){log(`成功: ${name}，${data.news.length} 条`); return data;} } catch(e){log(`失败: ${name} - ${e.message}`);} }
+  for (const [name,url] of sources) { try { log(`尝试数据源: ${name}`); const data=normalize(await get(url),date,url); if(data?.news?.length){log(`成功: ${name}，${data.news.length} 条`); return data;} } catch(e){log(`失败: ${name} - ${e.message}`);} }
   throw new Error(`所有数据源均失败: ${date}`);
 }
 
