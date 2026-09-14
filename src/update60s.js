@@ -39,20 +39,25 @@ function normalize(raw, date) {
     if (!x) continue;
     if (Array.isArray(x)) return {date,news:x.map(String),tip:''};
     if (Array.isArray(x.news)) return {...x,date:x.date||date,news:x.news.map(v=>typeof v==='string'?v:(v.title||v.content||JSON.stringify(v))),tip:x.tip||x.weiyu||''};
-    if (Array.isArray(x.data)) return {date,news:x.data.map(String),tip:x.tip||x.weiyu||''};
+    if (Array.isArray(x.data)) return {date,news:x.data.map(v=>typeof v==='string'?v:(v.title||v.content||v.description||JSON.stringify(v))),tip:x.tip||x.weiyu||''};
+    if (Array.isArray(x.content)) return {date,news:x.content.map(String),tip:x.tip||x.weiyu||''};
+    if (Array.isArray(x.newslist)) return {date,news:x.newslist.map(v=>typeof v==='string'?v:(v.title||v.content||v.description||JSON.stringify(v))),tip:x.tip||x.weiyu||''};
+    if (Array.isArray(x.list)) return {date,news:x.list.map(v=>typeof v==='string'?v:(v.title||v.content||v.description||JSON.stringify(v))),tip:x.tip||x.weiyu||''};
   }
   return null;
 }
 
 async function getNewsData(date) {
   const d=encodeURIComponent(date);
+  const owner=process.env.REPO_OWNER||'zhou75i';
+  const repo=process.env.REPO_NAME||'60sday';
   const sources=[
-    ['本仓库 jsDelivr',`https://cdn.jsdelivr.net/gh/${process.env.REPO_OWNER||'zhou75i'}/${process.env.REPO_NAME||'60sday'}@main/static/60s/${d}.json`],
-    ['本仓库 jsDelivr 镜像',`https://cdn.jsdmirror.com/gh/${process.env.REPO_OWNER||'zhou75i'}/${process.env.REPO_NAME||'60sday'}@main/static/60s/${d}.json`],
-    ['本仓库 Raw',`https://raw.githubusercontent.com/${process.env.REPO_OWNER||'zhou75i'}/${process.env.REPO_NAME||'60sday'}/main/static/60s/${d}.json`],
-    ['qqsuu API',`https://api.qqsuu.cn/api/dm-60s?date=${d}`],
-    ['vvhan API','https://api.vvhan.com/api/60s?type=json'],
-    ['jun.la API','https://api.jun.la/60s.php?format=json']
+    ['60s.viki.moe API','https://60s.viki.moe/v2/60s'],
+    ['60s-static 官方静态源',`https://60s-static.viki.moe/60s/${d}.json`],
+    ['60s-static jsDelivr',`https://cdn.jsdelivr.net/gh/vikiboss/60s-static-host@main/static/60s/${d}.json`],
+    ['本仓库 jsDelivr',`https://cdn.jsdelivr.net/gh/${owner}/${repo}@main/static/60s/${d}.json`],
+    ['本仓库 Raw',`https://raw.githubusercontent.com/${owner}/${repo}/main/static/60s/${d}.json`],
+    ['qqsuu API',`https://api.qqsuu.cn/api/dm-60s?date=${d}`]
   ];
   for (const [name,url] of sources) { try { log(`尝试数据源: ${name}`); const data=normalize(await get(url),date); if(data?.news?.length){log(`成功: ${name}，${data.news.length} 条`); return data;} } catch(e){log(`失败: ${name} - ${e.message}`);} }
   throw new Error(`所有数据源均失败: ${date}`);
