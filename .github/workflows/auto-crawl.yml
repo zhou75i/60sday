@@ -1,150 +1,42 @@
-name: Auto Crawl 60s Data and Generate Image
-
-# 定时触发：北京时间 00:00-12:00 每10分钟执行（覆盖全天上午，确保API更新后能抓到）
+name: 60s Daily Crawl
 on:
   schedule:
-    - cron: "*/10 16-23,0-4 * * *"
-  workflow_dispatch: # 手动触发测试
-
-# 防止多任务并发冲突
-concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: false
-
-# 最小权限（必须加，否则提交失败）
-permissions:
-  contents: write
-
+    - cron: '17 1 * * *'
+  workflow_dispatch:
+    inputs:
+      date:
+        description: '目标日期 YYYY-MM-DD，留空使用 UTC 日期'
+        required: false
+        type: string
 jobs:
-  crawl-and-generate:
+  crawl:
     runs-on: ubuntu-latest
-    timeout-minutes: 180
-    # 核心修复：设置北京时间时区，彻底解决日期错误
-    env:
-      TZ: Asia/Shanghai
-      GH_TOKEN: ${{ secrets.GH_TOKEN }}
-      REPO_OWNER: ${{ secrets.REPO_OWNER }}
-      REPO_NAME: ${{ secrets.REPO_NAME }}
-      BRANCH: main
-
+    concurrency:
+      group: 60s-daily-crawl
+      cancel-in-progress: false
+    permissions:
+      contents: write
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-          token: ${{ secrets.GITHUB_TOKEN }}
-
-      # 核心修复：获取【北京时间】的目标日期
-      - name: Determine target date
-        id: date
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: {node-version: 20, cache: npm}
+      - run: npm ci
+      - name: 随机延迟
+        run: sleep $((RANDOM % 240 + 30))
+      - name: 生成新闻图片
+        env:
+          REPO_OWNER: ${{ github.repository_owner }}
+          REPO_NAME: ${{ github.event.repository.name }}
+          MAX_RETRIES: 3
+          RETRY_BASE_MS: 3000
         run: |
-          TARGET_DATE=$(date '+%Y-%m-%d')
-          echo "✅ 使用北京时间日期：$TARGET_DATE"
-          echo "date=$TARGET_DATE" >> $GITHUB_OUTPUT
-
-      # 核心修复：检查数据是否已存在，避免重复爬取
-      - name: Check if data already exists
-        id: check-data
+          TARGET_DATE='${{ inputs.date }}'
+          [ -z "$TARGET_DATE" ] && TARGET_DATE=$(date -u +%F)
+          node src/update60s.js --date="$TARGET_DATE"
+      - name: 提交生成结果
         run: |
-          TARGET_DATE="${{ steps.date.outputs.date }}"
-          JSON_FILE="static/60s/${TARGET_DATE}.json"
-          PNG_FILE="static/images/${TARGET_DATE}.png"
-
-          if [ -f "$JSON_FILE" ] && [ -f "$PNG_FILE" ]; then
-            echo "✅ 今日数据已存在，跳过爬取"
-            echo "exists=true" >> $GITHUB_OUTPUT
-          else
-            echo "📥 今日数据不存在，开始爬取"
-            echo "exists=false" >> $GITHUB_OUTPUT
-          fi
-
-      # ==============================================
-      # 以下步骤仅在【数据不存在】时执行（避免无效运行）
-      # ==============================================
-      - name: Set up Node.js
-        if: steps.check-data.outputs.exists == 'false'
-        uses: actions/setup-node@v4
-        with:
-          node-version: '20'
-          cache: 'npm'
-
-      - name: Install dependencies
-        if: steps.check-data.outputs.exists == 'false'
-        run: npm install
-
-      - name: Install Puppeteer系统依赖
-        if: steps.check-data.outputs.exists == 'false'
-        run: sudo apt-get update && sudo apt-get install -y libnss3 libatk-bridge2.0-0 libdrm-dev libxkbcommon-dev libgbm-dev libasound-dev libatspi2.0-0 libxshmfence-dev
-
-      # 你的原有重试逻辑 + 传递正确日期（核心修复）
-      - name: 循环执行爬虫脚本（5分钟×8次重试）
-        if: steps.check-data.outputs.exists == 'false'
-        run: |
-          TARGET_DATE="${{ steps.date.outputs.date }}"
-          MAX_RETRIES=8
-          RETRY_COUNT=0
-          
-          while [ $RETRY_COUNT -lt $MAX_RETRIES ]; do
-              echo "====================================="
-              echo "第 $((RETRY_COUNT + 1)) 次执行 | 日期：$TARGET_DATE"
-              echo "====================================="
-              
-              # 关键修复：传递【北京时间日期】给脚本，解决API未更新错误
-              npm run crawl -- --date="$TARGET_DATE"
-              
-              if [ $? -eq 0 ]; then
-                  echo "✅ 脚本执行成功"
-                  break
-              fi
-              
-              RETRY_COUNT=$((RETRY_COUNT + 1))
-              if [ $RETRY_COUNT -lt $MAX_RETRIES ]; then
-                  echo "⏳ 5分钟后重试..."
-                  sleep 300
-              fi
-          done
-          
-          if [ $RETRY_COUNT -eq $MAX_RETRIES ]; then
-              echo "❌ 达到最大重试次数"
-              exit 1
-          fi
-
-      # 优化自动提交（更稳定，无第三方Action风险）
-      - name: Commit and push changes
-        if: steps.check-data.outputs.exists == 'false'
-        run: |
-          TARGET_DATE="${{ steps.date.outputs.date }}"
-          git config --local user.email "github-actions[bot]@users.noreply.github.com"
-          git config --local user.name "github-actions[bot]"
-    
-          # 只添加我们生成的图片和JSON，忽略所有垃圾文件
-          git add static/60s/${TARGET_DATE}.json static/images/${TARGET_DATE}.png
-    
-          # 只有文件变化了才提交，没变化就不报错
-          if [ -n "$(git status --porcelain)" ]; then
-            git commit -m "Auto update 60s data: $TARGET_DATE"
-            git push
-            echo "✅ 提交成功"
-          else
-            echo "ℹ️ 无文件变更，跳过提交"
-            exit 0
-          fi
-          
-      # 工作流汇总（一目了然看结果）
-      - name: Workflow Summary
-        if: always()
-        run: |
-          TARGET_DATE="${{ steps.date.outputs.date || 'N/A' }}"
-          DATA_EXISTS="${{ steps.check-data.outputs.exists || 'unknown' }}"
-          JOB_STATUS="${{ job.status }}"
-
-          echo "### 执行结果汇总" >> $GITHUB_STEP_SUMMARY
-          echo "- 目标日期：$TARGET_DATE" >> $GITHUB_STEP_SUMMARY
-          echo "- 任务状态：$JOB_STATUS" >> $GITHUB_STEP_SUMMARY
-          if [ "$DATA_EXISTS" = "true" ]; then
-            echo "✅ 数据已存在，跳过" >> $GITHUB_STEP_SUMMARY
-          elif [ "$JOB_STATUS" = "success" ]; then
-            echo "🎉 爬取+生成成功" >> $GITHUB_STEP_SUMMARY
-          else
-            echo "❌ 执行失败" >> $GITHUB_STEP_SUMMARY
-          fi
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add static/60s static/images
+          git diff --cached --quiet || git commit -m "chore: update 60s news"
+          git push
