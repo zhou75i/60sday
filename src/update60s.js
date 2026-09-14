@@ -2,6 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import axios from 'axios';
 import puppeteer from 'puppeteer';
+import { Solar } from 'lunar-javascript';
 
 const args = process.argv.slice(2);
 const dateArg = args.find(x => x.startsWith('--date='));
@@ -33,16 +34,24 @@ async function get(url) {
   throw last;
 }
 
+function getCalendarInfo(date) {
+  const [y,m,d] = date.split('-').map(Number);
+  const solar = Solar.fromYmd(y,m,d);
+  const lunar = solar.getLunar();
+  const week = ['日','一','二','三','四','五','六'][solar.getWeek()];
+  return { day_of_week: `星期${week}`, lunar_date: `${lunar.getYearInGanZhi()}年${lunar.getMonthInChinese()}月${lunar.getDayInChinese()}` };
+}
+
 function normalize(raw, date) {
   const candidates=[raw,raw?.data,raw?.result,raw?.data?.data];
   for (const x of candidates) {
     if (!x) continue;
-    if (Array.isArray(x)) return {date,news:x.map(String),tip:''};
-    if (Array.isArray(x.news)) return {...x,date:x.date||date,news:x.news.map(v=>typeof v==='string'?v:(v.title||v.content||JSON.stringify(v))),tip:x.tip||x.weiyu||''};
-    if (Array.isArray(x.data)) return {date,news:x.data.map(v=>typeof v==='string'?v:(v.title||v.content||v.description||JSON.stringify(v))),tip:x.tip||x.weiyu||''};
-    if (Array.isArray(x.content)) return {date,news:x.content.map(String),tip:x.tip||x.weiyu||''};
-    if (Array.isArray(x.newslist)) return {date,news:x.newslist.map(v=>typeof v==='string'?v:(v.title||v.content||v.description||JSON.stringify(v))),tip:x.tip||x.weiyu||''};
-    if (Array.isArray(x.list)) return {date,news:x.list.map(v=>typeof v==='string'?v:(v.title||v.content||v.description||JSON.stringify(v))),tip:x.tip||x.weiyu||''};
+    if (Array.isArray(x)) return {date,news:x.map(String),tip:'',...getCalendarInfo(date)};
+    if (Array.isArray(x.news)) return {...x,date:x.date||date,news:x.news.map(v=>typeof v==='string'?v:(v.title||v.content||JSON.stringify(v))),tip:x.tip||x.weiyu||'',...getCalendarInfo(date)};
+    if (Array.isArray(x.data)) return {date,news:x.data.map(v=>typeof v==='string'?v:(v.title||v.content||v.description||JSON.stringify(v))),tip:x.tip||x.weiyu||'',...getCalendarInfo(date)};
+    if (Array.isArray(x.content)) return {date,news:x.content.map(String),tip:x.tip||x.weiyu||'',...getCalendarInfo(date)};
+    if (Array.isArray(x.newslist)) return {date,news:x.newslist.map(v=>typeof v==='string'?v:(v.title||v.content||v.description||JSON.stringify(v))),tip:x.tip||x.weiyu||'',...getCalendarInfo(date)};
+    if (Array.isArray(x.list)) return {date,news:x.list.map(v=>typeof v==='string'?v:(v.title||v.content||v.description||JSON.stringify(v))),tip:x.tip||x.weiyu||'',...getCalendarInfo(date)};
   }
   return null;
 }
